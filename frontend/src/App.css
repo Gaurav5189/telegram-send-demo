@@ -139,6 +139,169 @@ h1 {
   gap: 8px;
 }
 
+.field__label {
+  font-size: 0.83rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Connect Telegram */
+
+.connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed #c8dde9;
+  border-radius: 14px;
+  background: #f8fcfe;
+}
+
+.connect--pending {
+  border-style: solid;
+  border-color: #cfe3ef;
+  background: #f2f9fd;
+}
+
+.connect__text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.connect__text strong {
+  color: var(--ink);
+}
+
+.connect__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--tg-blue-dark);
+  text-decoration: none;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.text-button {
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.text-button:hover {
+  color: var(--ink);
+}
+
+.connected {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid #c6ecd8;
+  border-radius: 12px;
+  background: var(--success-bg);
+}
+
+.connected__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success-ink);
+  box-shadow: 0 0 0 4px rgba(20, 122, 75, 0.12);
+}
+
+.connected__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+  color: var(--success-ink);
+}
+
+.connected__text .hint {
+  font-size: 0.74rem;
+  color: var(--success-ink);
+  opacity: 0.8;
+}
+
+.connected .text-button {
+  color: var(--success-ink);
+  opacity: 0.8;
+}
+
+.connected .text-button:hover {
+  opacity: 1;
+}
+
+/* Manual Chat ID fallback */
+
+.manual {
+  padding-top: 2px;
+}
+
+.manual summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.manual summary::-webkit-details-marker {
+  display: none;
+}
+
+.manual summary::before {
+  content: '▸';
+  font-size: 0.7rem;
+  transition: transform 120ms ease;
+}
+
+.manual[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.manual summary:hover {
+  color: var(--ink);
+}
+
+.manual summary:focus-visible {
+  outline: 2px solid rgba(42, 171, 238, 0.4);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.manual__field {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdfe;
+}
+
+
 label {
   font-size: 0.83rem;
   font-weight: 600;
@@ -246,6 +409,18 @@ textarea {
   cursor: progress;
   filter: saturate(0.55);
   opacity: 0.8;
+}
+
+.button--secondary {
+  background: #ffffff;
+  color: var(--tg-blue-dark);
+  border: 1px solid #bfe1f2;
+  box-shadow: 0 6px 14px -10px rgba(29, 143, 201, 0.7);
+}
+
+.button--secondary:hover:not(:disabled) {
+  background: #f4fbff;
+  filter: none;
 }
 
 /* Status badge */
