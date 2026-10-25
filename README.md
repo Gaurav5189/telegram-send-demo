@@ -30,6 +30,8 @@ curl http://localhost:3000/api/telegram/health
 # {"status":"ok"}
 ```
 
+Open the interactive API documentation at http://localhost:3000/api/docs.
+
 ## 3. Run the frontend
 
 ```bash
