@@ -10,7 +10,6 @@
     "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
-    "incremental": true,
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": true,
