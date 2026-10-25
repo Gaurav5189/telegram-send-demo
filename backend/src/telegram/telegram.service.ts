@@ -31,6 +31,9 @@ const ACTION_LABELS: Record<ActionData, string> = {
 
 const LINK_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const LINK_PAYLOAD_PREFIX = 'link_';
+const DEFAULT_API_ROOT = 'https://api.telegram.org';
+/** Long-polling timeout. Kept short so relays and proxies can hold the request. */
+const POLLING_TIMEOUT_SECONDS = 10;
 
 function isActionData(data: string): data is ActionData {
   return data === 'action_done' || data === 'action_snooze';
@@ -47,12 +50,17 @@ function notificationKeyboard(): InlineKeyboard {
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramService.name);
   private readonly token: string;
+  private readonly apiRoot: string;
   private readonly pendingLinks = new Map<string, PendingLink>();
   private bot?: Bot;
   private botUsername?: string;
 
   constructor(private readonly configService: ConfigService) {
     this.token = this.configService.get<string>('TELEGRAM_BOT_TOKEN')?.trim() ?? '';
+    // Hosts such as Hugging Face Spaces block api.telegram.org; set
+    // TELEGRAM_API_ROOT to a relay that forwards to the Bot API to fix that.
+    this.apiRoot =
+      this.configService.get<string>('TELEGRAM_API_ROOT')?.trim().replace(/\/+$/, '') || DEFAULT_API_ROOT;
   }
 
   onModuleInit(): void {
@@ -62,8 +70,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    this.bot = new Bot(this.token);
+    this.bot = new Bot(this.token, {
+      client: {
+        apiRoot: this.apiRoot,
+        // Fail fast (30s) instead of hanging for minutes on a blocked network.
+        timeoutSeconds: 30,
+      },
+    });
     this.registerHandlers();
+    this.logger.log(`Using Telegram Bot API root ${this.apiRoot}`);
 
     // Never leave an unhandled rejection from the polling loop.
     this.bot.catch((error) => {
@@ -73,6 +88,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     // bot.start() resolves only when polling stops, so it must not be awaited here.
     void this.bot
       .start({
+        timeout: POLLING_TIMEOUT_SECONDS,
         onStart: (me) => {
           this.botUsername = me.username;
           this.logger.log(`Telegram bot @${me.username} is polling`);
@@ -80,7 +96,23 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       })
       .catch((error: Error) => {
         this.logger.error(`Telegram bot failed to start: ${error.message}`);
+        this.logStartupHint(error);
       });
+  }
+
+  /**
+   * The most common deployment failure is not a bug: some hosts (notably
+   * Hugging Face Spaces) block outbound traffic to api.telegram.org, which
+   * surfaces as "Network request for 'getMe' failed!". Say so in the logs.
+   */
+  private logStartupHint(error: Error): void {
+    if (!/Network request/i.test(error.message)) return;
+
+    this.logger.error(
+      `Cannot reach the Telegram Bot API at ${this.apiRoot}. ` +
+        'If this host blocks api.telegram.org (Hugging Face Spaces does), deploy a relay and set ' +
+        'TELEGRAM_API_ROOT to it, or move the backend to a host with unrestricted outbound HTTPS.',
+    );
   }
 
   async onModuleDestroy(): Promise<void> {

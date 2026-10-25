@@ -82,6 +82,50 @@ Telegram delivery failures return `502`.
 
 `GET /api/telegram/link/:code` → `{ "status": "pending" }`, `{ "status": "connected", "chatId": "…" }`, or `{ "status": "expired" }`
 
+## Deploying behind Caddy (Hugging Face Spaces)
+
+The `Caddyfile` + `supervisord.conf` setup (Caddy on `:7860` → NestJS on `:3000`)
+is sound: if `GET /api/telegram/health` returns `{"status":"ok"}` through the
+public URL, the proxy is working.
+
+A deployed copy still returns
+
+```json
+{ "message": "Telegram bot is not reachable yet: Network request for 'getMe' failed!", "statusCode": 503 }
+```
+
+because **Hugging Face Spaces block outbound traffic to `api.telegram.org`** at
+the network level. No code or Caddy change can fix that from inside the Space.
+Calls have to go through a relay outside HF:
+
+- The backend reads `TELEGRAM_API_ROOT` at boot (default
+  `https://api.telegram.org`) and sends every Bot API call through it.
+- A working relay is the Cloudflare Pages bridge
+  `https://n8n-bridge-2gt.pages.dev`, which forwards
+  `https://n8n-bridge-2gt.pages.dev/bot<token>/<method>` to
+  `https://api.telegram.org/bot<token>/<method>` unchanged (GET, POST, query
+  strings, and long polling included).
+
+In the Space open **Settings → Variables and secrets** and add:
+
+```
+TELEGRAM_API_ROOT = https://n8n-bridge-2gt.pages.dev
+```
+
+Then **Restart** the Space. Logs should show:
+
+```
+[TelegramService] Using Telegram Bot API root https://n8n-bridge-2gt.pages.dev
+[TelegramService] Telegram bot @your_bot is polling
+```
+
+If the second line is missing, the Space cannot reach the Bot API (or the
+relay). Requests still go out over HTTPS with the token in the path, so keep the
+relay private if you build your own; the alternative is to move the backend to a
+host without egress filtering (Render, Fly.io, Railway, Koyeb, a VPS) and keep
+only the frontend on HF. Point the frontend at that API with `VITE_API_URL` and
+add its origin to `CORS_ORIGINS`.
+
 ## Notes
 
 - The backend fails fast at boot if `TELEGRAM_BOT_TOKEN` is missing, because the
