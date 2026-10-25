@@ -208,6 +208,44 @@ h1 {
   color: var(--ink);
 }
 
+.connect__fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed #cfe3ef;
+}
+
+.command-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.command {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #cfe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.command-row .text-button {
+  flex: none;
+}
+
+.hint--warn {
+  color: #8a5a00;
+}
+
 .connected {
   display: flex;
   align-items: center;

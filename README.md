@@ -37,6 +37,7 @@ Open the interactive API documentation at http://localhost:3000/api/docs.
 ```bash
 cd frontend
 npm install
+cp .env.example .env   # VITE_API_URL=http://localhost:3000
 npm run dev
 ```
 
@@ -49,12 +50,19 @@ message and send it.
 Nobody needs to know what a Chat ID is:
 
 1. The UI's **Connect Telegram** button asks the backend for a one-time code.
-2. The backend creates a one-time code and returns two links:
-   - `deepLink`: `https://t.me/nemo_calls_bot?start=link_4dwNOSW4syjy` (mobile / desktop app)
+2. The backend returns two links plus a pasteable command:
+   - `deepLink`: `https://t.me/nemo_calls_bot?start=link_4dwNOSW4syjy` (mobile app / desktop app)
    - `webLink`: `https://web.telegram.org/z/#?tgaddr=tg://resolve?domain=nemo_calls_bot%26start=link_4dwNOSW4syjy` (Telegram Web)
-3. The user presses **Start** in Telegram. The bot receives `/start link_…`,
+   - `startCommand`: `/start link_4dwNOSW4syjy` (works in any Telegram client)
+3. The UI picks the link by platform and opens it:
+   - **Mobile:** `deepLink`. `t.me` is a universal/app link, so the OS opens the
+     installed Telegram app and falls back to the browser only when it is not
+     installed.
+   - **Desktop:** `webLink`, because a `t.me` preview opened in a normal desktop
+     tab cannot launch the bot's `tg://` start button.
+4. The user presses **Start** in Telegram. The bot receives `/start link_…`,
    binds that chat to the code, and replies "✅ Connected!".
-4. The UI is polling `GET /api/telegram/link/:code`; it sees `connected`, stores
+5. The UI is polling `GET /api/telegram/link/:code`; it sees `connected`, stores
    the Chat ID in `localStorage`, and shows the green connected card.
 
 The Chat ID is still visible under **Use a Chat ID manually** for debugging, but
@@ -62,6 +70,40 @@ it is an implementation detail rather than something users must copy.
 
 Link codes are single-use, expire after 10 minutes, and are kept in memory, so
 restarting the backend invalidates pending links.
+
+### Mobile vs desktop, and app detection
+
+There is **no reliable web API to detect whether an app is installed**. Browsers
+deliberately hide that, so the page cannot branch on "Telegram installed?".
+Instead:
+
+- On mobile, the `t.me` universal link delegates the decision to the operating
+  system: app if installed, browser otherwise. This is the standard and most
+  reliable approach.
+- On desktop, we cannot detect the Telegram desktop app either. Firing `tg://`
+  blindly can show an error or do nothing, so we use Telegram Web by default and
+  offer the desktop-app link explicitly.
+
+The pending panel covers the cases where the automatic choice does not work:
+
+- **Nothing opened / popup blocked:** "Open Telegram again" is a normal link.
+- **Telegram Web is logged out:** the page shows a login screen. "Use the
+  Telegram desktop app instead" (or the copied command) avoids it.
+- **In-app browsers** (Instagram, Facebook, etc.) often block universal links:
+  the UI detects common ones and suggests opening the page in the default
+  browser.
+- **Copy the command:** `/start link_…` can be pasted into any Telegram client,
+  including the desktop app or a phone that is already signed in.
+- **Reload / back navigation:** the pending link is stored in `sessionStorage`,
+  so polling resumes instead of silently losing the code.
+- **Backgrounded tab:** a `visibilitychange` listener checks immediately when
+  the user returns from Telegram.
+- **Expired or reused code:** cleared from storage and the UI asks for a fresh
+  connection.
+
+Clipboard access can be unavailable in some embedded browsers or on plain HTTP.
+In that case the command remains selectable in the page for manual copying.
+
 
 ## API
 
@@ -78,7 +120,7 @@ Telegram delivery failures return `502`.
 
 `GET /api/telegram/bot` → `{ "username": "nemo_calls_bot", "deepLink": "https://t.me/nemo_calls_bot" }`
 
-`POST /api/telegram/link` → `{ "code": "…", "username": "…", "deepLink": "https://t.me/…?start=link_…", "webLink": "https://web.telegram.org/z/#?tgaddr=…", "expiresAt": "…" }`
+`POST /api/telegram/link` → `{ "code": "…", "username": "…", "deepLink": "https://t.me/…?start=link_…", "webLink": "https://web.telegram.org/z/#?tgaddr=…", "startCommand": "/start link_…", "expiresAt": "…" }`
 
 `GET /api/telegram/link/:code` → `{ "status": "pending" }`, `{ "status": "connected", "chatId": "…" }`, or `{ "status": "expired" }`
 
@@ -101,21 +143,21 @@ Calls have to go through a relay outside HF:
 - The backend reads `TELEGRAM_API_ROOT` at boot (default
   `https://api.telegram.org`) and sends every Bot API call through it.
 - A working relay is the Cloudflare Pages bridge
-  `https://n8n-bridge-2gt.pages.dev`, which forwards
-  `https://n8n-bridge-2gt.pages.dev/bot<token>/<method>` to
+  `https://<bridge_link>.pages.dev`, which forwards
+  `https://<bridge_link>.pages.dev/bot<token>/<method>` to
   `https://api.telegram.org/bot<token>/<method>` unchanged (GET, POST, query
   strings, and long polling included).
 
 In the Space open **Settings → Variables and secrets** and add:
 
 ```
-TELEGRAM_API_ROOT = https://n8n-bridge-2gt.pages.dev
+TELEGRAM_API_ROOT = https://<bridge_link>.pages.dev
 ```
 
 Then **Restart** the Space. Logs should show:
 
 ```
-[TelegramService] Using Telegram Bot API root https://n8n-bridge-2gt.pages.dev
+[TelegramService] Using Telegram Bot API root https://<bridge_link>.pages.dev
 [TelegramService] Telegram bot @your_bot is polling
 ```
 
@@ -132,8 +174,10 @@ add its origin to `CORS_ORIGINS`.
   bot cannot poll without it.
 - Only one polling process per bot token can run at a time. Stop other instances
   (or a deployed copy) if you see `409 Conflict`.
-- The frontend talks to `http://localhost:3000` by default; override with
-  `VITE_API_URL` when running elsewhere.
+- The frontend uses relative `/api/...` URLs by default, which is what you want
+  when Caddy serves the UI and API from one origin. For local development the
+  two dev servers are separate: copy `frontend/.env.example` to `frontend/.env`
+  so `VITE_API_URL=http://localhost:3000` is set.
 - The backend allows `http://localhost:5173` by default. Set `CORS_ORIGINS` in
   `backend/.env` to your Cloudflare Pages origin, for example
   `CORS_ORIGINS=https://your-app.pages.dev`. Multiple origins can be separated

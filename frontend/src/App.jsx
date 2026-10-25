@@ -4,6 +4,7 @@ import './App.css';
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const CHAT_ID_KEY = 'telegram-demo:chat-id';
 const LINKED_KEY = 'telegram-demo:linked';
+const PENDING_LINK_KEY = 'telegram-demo:pending-link';
 const MAX_MESSAGE_LENGTH = 4096;
 
 /** Nest validation errors arrive as string or string[]; flatten either. */
@@ -18,6 +19,70 @@ function storedChatId() {
   return localStorage.getItem(CHAT_ID_KEY) ?? '';
 }
 
+/**
+ * Browsers cannot reliably tell whether the Telegram app is installed. On
+ * mobile we therefore use the t.me link, which is a universal/app link: the OS
+ * opens the app when present and falls back to the browser when it is not.
+ */
+function isMobileDevice() {
+  const ua = navigator.userAgent || '';
+  const uaData = navigator.userAgentData;
+  const iPadOsDesktopMode = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+
+  return (
+    Boolean(uaData?.mobile) ||
+    iPadOsDesktopMode ||
+    /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(ua)
+  );
+}
+
+/** In-app browsers often block app links and custom schemes. */
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|MicroMessenger|Snapchat|Pinterest/i.test(ua);
+}
+
+function telegramTarget(link) {
+  if (!link) return '';
+  return isMobileDevice() ? link.deepLink : link.webLink || link.deepLink;
+}
+
+/** Kept in sessionStorage so a reload / back navigation resumes polling. */
+function readPendingLink() {
+  try {
+    const raw = sessionStorage.getItem(PENDING_LINK_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.code) return null;
+
+    if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      sessionStorage.removeItem(PENDING_LINK_KEY);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingLink(link) {
+  try {
+    sessionStorage.setItem(PENDING_LINK_KEY, JSON.stringify(link));
+  } catch {
+    // Storage can be unavailable (private mode / embedded browsers).
+  }
+}
+
+function clearPendingLink() {
+  try {
+    sessionStorage.removeItem(PENDING_LINK_KEY);
+  } catch {
+    // Ignore.
+  }
+}
+
 export default function App() {
   const [chatId, setChatId] = useState(storedChatId);
   const [linked, setLinked] = useState(
@@ -27,7 +92,7 @@ export default function App() {
   const [status, setStatus] = useState(null);
   const [sending, setSending] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [pendingLink, setPendingLink] = useState(null);
+  const [pendingLink, setPendingLink] = useState(readPendingLink);
   const [botInfo, setBotInfo] = useState(null);
   const [apiOnline, setApiOnline] = useState(null);
 
@@ -47,13 +112,14 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  // Poll while the user is in Telegram pressing Start.
+  // Poll while the user is in Telegram pressing Start. Also polls immediately
+  // when the tab becomes visible again (e.g. returning from the Telegram app).
   useEffect(() => {
     if (!pendingLink) return undefined;
 
     let cancelled = false;
 
-    const timer = setInterval(async () => {
+    const checkStatus = async () => {
       try {
         const response = await fetch(`${API_BASE}/api/telegram/link/${pendingLink.code}`);
         const payload = await response.json().catch(() => null);
@@ -65,6 +131,7 @@ export default function App() {
           setChatId(connectedChatId);
           setLinked(true);
           setPendingLink(null);
+          clearPendingLink();
           localStorage.setItem(CHAT_ID_KEY, connectedChatId);
           localStorage.setItem(LINKED_KEY, '1');
           setStatus({
@@ -73,6 +140,7 @@ export default function App() {
           });
         } else if (payload.status === 'expired') {
           setPendingLink(null);
+          clearPendingLink();
           setStatus({
             type: 'error',
             text: 'That connect link expired. Click Connect Telegram to try again.',
@@ -81,11 +149,20 @@ export default function App() {
       } catch {
         // Transient network blip: keep polling until the link expires.
       }
-    }, 2000);
+    };
+
+    void checkStatus();
+    const timer = setInterval(checkStatus, 2000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void checkStatus();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [pendingLink]);
 
@@ -102,20 +179,35 @@ export default function App() {
       }
 
       setPendingLink(payload);
+      savePendingLink(payload);
       if (payload.username) {
         setBotInfo({ username: payload.username, deepLink: `https://t.me/${payload.username}` });
       }
 
-      // Called from a click handler, so popup blockers normally allow this.
-      // We prefer the web.telegram.org URL (handles bot start payloads correctly
-      // inside Telegram Web) and fall back to the t.me link.
-      window.open(payload.webLink || payload.deepLink, '_blank', 'noopener,noreferrer');
+      // Mobile: t.me is a universal link, so the OS opens the Telegram app when
+      // installed and the browser when it is not. Desktop: prefer Telegram Web,
+      // whose URL handles the start payload correctly.
+      const target = telegramTarget(payload);
+      const opened = window.open(target, '_blank');
+
+      if (opened) {
+        try {
+          opened.opener = null;
+        } catch {
+          // Cross-origin window; nothing to do.
+        }
+      } else {
+        setStatus({
+          type: 'pending',
+          text: 'Telegram did not open automatically. Use the link below.',
+        });
+      }
     } catch (error) {
       setStatus({
         type: 'error',
         text:
           error instanceof TypeError
-            ? `Could not reach the API at ${API_BASE}. Is the backend running?`
+            ? `Could not reach the API. Is the backend running?`
             : error.message,
       });
     } finally {
@@ -123,10 +215,37 @@ export default function App() {
     }
   }
 
+  function handleCancelConnect() {
+    setPendingLink(null);
+    clearPendingLink();
+    setStatus(null);
+  }
+
+  async function handleCopyCommand() {
+    const command =
+      pendingLink?.startCommand ?? (pendingLink ? `/start link_${pendingLink.code}` : '');
+
+    if (!command) return;
+
+    try {
+      await navigator.clipboard.writeText(command);
+      setStatus({
+        type: 'success',
+        text: 'Command copied. Paste it to the bot in Telegram.',
+      });
+    } catch {
+      setStatus({
+        type: 'error',
+        text: 'Could not copy automatically. Select the command and copy it manually.',
+      });
+    }
+  }
+
   function handleDisconnect() {
     setChatId('');
     setLinked(false);
     setPendingLink(null);
+    clearPendingLink();
     setStatus(null);
     localStorage.removeItem(CHAT_ID_KEY);
     localStorage.removeItem(LINKED_KEY);
@@ -198,6 +317,10 @@ export default function App() {
     }
   }
 
+  const mobile = isMobileDevice();
+  const inApp = isInAppBrowser();
+  const openTarget = telegramTarget(pendingLink);
+
   return (
     <main className="page">
       <section className="card" aria-labelledby="title">
@@ -240,22 +363,47 @@ export default function App() {
                   that just opened.
                 </p>
                 <div className="connect__actions">
-                  <a
-                    className="text-link"
-                    href={pendingLink.webLink || pendingLink.deepLink}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a className="text-link" href={openTarget} target="_blank" rel="noreferrer">
                     Open Telegram again
                   </a>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => setPendingLink(null)}
-                  >
+                  <button type="button" className="text-button" onClick={handleCancelConnect}>
                     Cancel
                   </button>
                 </div>
+
+                <div className="connect__fallback">
+                  <p className="hint">
+                    Telegram didn&apos;t open? Send this command to{' '}
+                    {botInfo?.username ? `@${botInfo.username}` : 'the bot'} in any Telegram app.
+                  </p>
+                  <div className="command-row">
+                    <code className="command">
+                      {pendingLink.startCommand || `/start link_${pendingLink.code}`}
+                    </code>
+                    <button type="button" className="text-button" onClick={handleCopyCommand}>
+                      Copy
+                    </button>
+                  </div>
+                  <a
+                    className="text-link"
+                    href={
+                      mobile
+                        ? pendingLink.webLink || pendingLink.deepLink
+                        : pendingLink.deepLink
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {mobile ? 'Use Telegram Web instead' : 'Use the Telegram desktop app instead'}
+                  </a>
+                </div>
+
+                {inApp && (
+                  <p className="hint hint--warn">
+                    You&apos;re in an in-app browser. If Telegram doesn&apos;t open, use the browser
+                    menu to open this page in your default browser.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="connect">

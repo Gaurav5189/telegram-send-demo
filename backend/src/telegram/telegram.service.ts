@@ -16,6 +16,8 @@ export interface ConnectLink {
   username: string;
   deepLink: string;
   webLink: string;
+  /** Ready-to-paste fallback for clients where links do not open. */
+  startCommand: string;
   expiresAt: string;
 }
 
@@ -156,13 +158,15 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     const expiresAt = Date.now() + LINK_TTL_MS;
     this.pendingLinks.set(code, { expiresAt });
 
-    const tgLink = `tg://resolve?domain=${username}&start=${LINK_PAYLOAD_PREFIX}${code}`;
+    const payload = `${LINK_PAYLOAD_PREFIX}${code}`;
+    const tgLink = `tg://resolve?domain=${username}&start=${payload}`;
 
     return {
       code,
       username,
-      deepLink: `https://t.me/${username}?start=${LINK_PAYLOAD_PREFIX}${code}`,
+      deepLink: `https://t.me/${username}?start=${payload}`,
       webLink: `https://web.telegram.org/z/#?tgaddr=${encodeURIComponent(tgLink)}`,
+      startCommand: `/start ${payload}`,
       expiresAt: new Date(expiresAt).toISOString(),
     };
   }
