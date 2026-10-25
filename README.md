@@ -88,6 +88,10 @@ Telegram delivery failures return `502`.
   (or a deployed copy) if you see `409 Conflict`.
 - The frontend talks to `http://localhost:3000` by default; override with
   `VITE_API_URL` when running elsewhere.
+- The backend allows `http://localhost:5173` by default. Set `CORS_ORIGINS` in
+  `backend/.env` to your Cloudflare Pages origin, for example
+  `CORS_ORIGINS=https://your-app.pages.dev`. Multiple origins can be separated
+  with commas.
 - This is still a demo: links and chat bindings live in memory, there are no user
   accounts, and anyone holding a valid link code can read the bound Chat ID. For
   production, persist links and chat bindings in a database, associate them with
