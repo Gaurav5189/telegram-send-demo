@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import './App.css';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const CHAT_ID_KEY = 'telegram-demo:chat-id';
 const LINKED_KEY = 'telegram-demo:linked';
 const MAX_MESSAGE_LENGTH = 4096;
