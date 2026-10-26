@@ -48,6 +48,10 @@ function telegramTarget(link) {
 }
 
 /** Kept in sessionStorage so a reload / back navigation resumes polling. */
+function isValidChatId(value) {
+  return /^-?\d+$/.test(value);
+}
+
 function readPendingLink() {
   try {
     const raw = sessionStorage.getItem(PENDING_LINK_KEY);
@@ -136,14 +140,14 @@ export default function App() {
           localStorage.setItem(LINKED_KEY, '1');
           setStatus({
             type: 'success',
-            text: 'Telegram connected. Send your first notification!',
+            text: 'Telegram connected.',
           });
         } else if (payload.status === 'expired') {
           setPendingLink(null);
           clearPendingLink();
           setStatus({
             type: 'error',
-            text: 'That connect link expired. Click Connect Telegram to try again.',
+            text: 'That connect link expired. Connect again to get a new one.',
           });
         }
       } catch {
@@ -199,7 +203,7 @@ export default function App() {
       } else {
         setStatus({
           type: 'pending',
-          text: 'Telegram did not open automatically. Use the link below.',
+          text: "Telegram didn't open automatically. Use Open Telegram again below.",
         });
       }
     } catch (error) {
@@ -207,7 +211,7 @@ export default function App() {
         type: 'error',
         text:
           error instanceof TypeError
-            ? `Could not reach the API. Is the backend running?`
+            ? 'Could not reach the API. Check that the backend is running.'
             : error.message,
       });
     } finally {
@@ -231,12 +235,12 @@ export default function App() {
       await navigator.clipboard.writeText(command);
       setStatus({
         type: 'success',
-        text: 'Command copied. Paste it to the bot in Telegram.',
+        text: 'Copied.',
       });
     } catch {
       setStatus({
         type: 'error',
-        text: 'Could not copy automatically. Select the command and copy it manually.',
+        text: 'Could not copy. Select the command and copy it manually.',
       });
     }
   }
@@ -302,14 +306,14 @@ export default function App() {
 
       setStatus({
         type: 'success',
-        text: `Notification sent to chat ${trimmedChatId}.`,
+        text: 'Message sent.',
       });
     } catch (error) {
       const isNetworkError = error instanceof TypeError;
       setStatus({
         type: 'error',
         text: isNetworkError
-          ? `Could not reach the API at ${API_BASE}. Is the backend running?`
+          ? 'Could not reach the API. Check that the backend is running.'
           : error.message,
       });
     } finally {
@@ -325,21 +329,13 @@ export default function App() {
     <main className="page">
       <section className="card" aria-labelledby="title">
         <header className="card__header">
-          <div className="brand" aria-hidden="true">
-            ✈️
-          </div>
-          <div>
-            <h1 id="title">Telegram Notifier</h1>
-            <p className="subtitle">Connect Telegram, then send a message with one-tap actions.</p>
-          </div>
-          <span
-            className={`pill ${apiOnline === null ? 'pill--idle' : apiOnline ? 'pill--online' : 'pill--offline'}`}
-            title={`${API_BASE}/api/telegram/health`}
-          >
-            <span className="pill__dot" aria-hidden="true" />
-            {apiOnline === null ? 'Checking API' : apiOnline ? 'API online' : 'API offline'}
+          <h1 id="title">Telegram Notifier</h1>
+          <span className="status" id="api-status" data-state={apiOnline === null ? 'checking' : apiOnline ? 'online' : 'offline'} role="status" aria-live="polite">
+            <span className="status__dot" aria-hidden="true" />
+            <span id="api-status-text">{apiOnline === null ? 'Checking API' : apiOnline ? 'API online' : 'API offline'}</span>
           </span>
         </header>
+        <p className="subtitle">Send a message to Telegram with Mark done and Snooze buttons.</p>
 
         <form className="form" onSubmit={handleSubmit} noValidate>
           <div className="field">
@@ -347,31 +343,22 @@ export default function App() {
 
             {linked ? (
               <div className="connected">
-                <span className="connected__dot" aria-hidden="true" />
-                <div className="connected__text">
-                  <strong>Telegram connected</strong>
-                  <span className="hint">Chat ID {chatId}</span>
-                </div>
-                <button type="button" className="text-button" onClick={handleDisconnect}>
-                  Disconnect
-                </button>
+                <span className="connected__label">Connected: <span>{chatId}</span></span>
+                <button type="button" className="link-button" onClick={handleDisconnect}>Disconnect</button>
               </div>
             ) : pendingLink ? (
-              <div className="connect connect--pending">
-                <p className="connect__text">
-                  <strong>Waiting for Telegram…</strong> Press <strong>Start</strong> in the chat
-                  that just opened.
-                </p>
-                <div className="connect__actions">
-                  <a className="text-link" href={openTarget} target="_blank" rel="noreferrer">
-                    Open Telegram again
-                  </a>
-                  <button type="button" className="text-button" onClick={handleCancelConnect}>
-                    Cancel
-                  </button>
+              <div className="panel" id="pending-view">
+                <p className="panel__title">Waiting for Telegram…</p>
+                <p className="panel__text">Press <strong>Start</strong> in the chat that just opened.</p>
+                <div className="panel__actions">
+                  <a className="link" href={openTarget} target="_blank" rel="noreferrer">Open Telegram again</a>
+                  <button type="button" className="link-button" onClick={handleCancelConnect}>Cancel</button>
                 </div>
 
-                <div className="connect__fallback">
+                <div className="panel__fallback">
+                  <p className="hint hint--warn" hidden={!inApp}>
+                    You&apos;re in an in-app browser. If Telegram doesn&apos;t open, open this page in your default browser.
+                  </p>
                   <p className="hint">
                     Telegram didn&apos;t open? Send this command to{' '}
                     {botInfo?.username ? `@${botInfo.username}` : 'the bot'} in any Telegram app.
@@ -380,30 +367,17 @@ export default function App() {
                     <code className="command">
                       {pendingLink.startCommand || `/start link_${pendingLink.code}`}
                     </code>
-                    <button type="button" className="text-button" onClick={handleCopyCommand}>
-                      Copy
-                    </button>
+                    <button type="button" onClick={handleCopyCommand}>Copy</button>
                   </div>
                   <a
-                    className="text-link"
-                    href={
-                      mobile
-                        ? pendingLink.webLink || pendingLink.deepLink
-                        : pendingLink.deepLink
-                    }
+                    className="link"
+                    href={mobile ? (pendingLink.webLink || pendingLink.deepLink) : pendingLink.deepLink}
                     target="_blank"
                     rel="noreferrer"
                   >
                     {mobile ? 'Use Telegram Web instead' : 'Use the Telegram desktop app instead'}
                   </a>
                 </div>
-
-                {inApp && (
-                  <p className="hint hint--warn">
-                    You&apos;re in an in-app browser. If Telegram doesn&apos;t open, use the browser
-                    menu to open this page in your default browser.
-                  </p>
-                )}
               </div>
             ) : (
               <div className="connect">
@@ -415,44 +389,44 @@ export default function App() {
                 >
                   {connecting
                     ? 'Opening Telegram…'
-                    : `Connect Telegram${botInfo?.username ? ` (@${botInfo.username})` : ''}`}
+                    : botInfo?.username ? `Connect @${botInfo.username}` : 'Connect Telegram'}
                 </button>
                 <p className="hint">
                   Opens {botInfo?.username ? `@${botInfo.username}` : 'our bot'} in Telegram. Press{' '}
-                  <strong>Start</strong> once — your Chat ID is filled in automatically.
+                  <strong>Start</strong> once — your chat ID is filled in automatically.
                 </p>
               </div>
             )}
           </div>
 
-          <details className="manual">
-            <summary>Use a Chat ID manually</summary>
+          <details className="manual" id="manual">
+            <summary>Use a chat ID manually</summary>
             <div className="field manual__field">
               <label htmlFor="chatId">Chat ID</label>
               <input
                 id="chatId"
                 name="chatId"
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
                 autoComplete="off"
+                spellCheck="false"
                 placeholder="123456789"
                 value={chatId}
                 onChange={handleManualChatIdChange}
+                aria-invalid={!isValidChatId(chatId.trim()) && chatId.trim() !== '' ? 'true' : 'false'}
+                aria-describedby="chat-hint chat-error"
               />
-              <p className="hint">
-                Message the bot with <strong>/start</strong> and it will reply with your Chat ID.
-              </p>
+              <p className="hint" id="chat-hint">Message the bot with <strong>/start</strong> and it will reply with your chat ID.</p>
             </div>
           </details>
+          <p className="error" id="chat-error" role="status" hidden={chatId.trim() === '' || isValidChatId(chatId.trim())}>
+            {!chatId.trim() ? '' : 'Enter a numeric chat ID, e.g. 123456789.'}
+          </p>
 
           <div className="field">
             <div className="label-row">
-              <label htmlFor="message">Notification Message</label>
-              <span
-                className={`counter ${message.length > MAX_MESSAGE_LENGTH ? 'counter--over' : ''}`}
-              >
-                {message.length}/{MAX_MESSAGE_LENGTH}
-              </span>
+              <label htmlFor="message">Message</label>
+              <span className="count"><span id="counter">{message.length}</span>/4096</span>
             </div>
             <textarea
               id="message"
@@ -462,35 +436,26 @@ export default function App() {
               placeholder="Deploy finished — take a look when you can."
               value={message}
               onChange={(event) => setMessage(event.target.value)}
+              dir="auto"
             />
           </div>
 
-          <button className="button" type="submit" disabled={sending}>
-            {sending ? 'Sending…' : 'Send Notification'}
+          <button className="button primary" type="submit" disabled={sending} aria-disabled={sending ? 'true' : 'false'}>
+            {sending ? 'Sending…' : 'Send message'}
           </button>
+          <p className={`result ${status ? (status.type === 'pending' ? 'pending' : status.type === 'success' ? 'success' : status.type === 'error' ? 'error' : '') : ''}`} id="result" role="status" aria-live="polite" aria-atomic="true">
+            {status ? status.text : null}
+          </p>
 
-          <div className="status" role="status" aria-live="polite">
-            {status && (
-              <span className={`badge badge--${status.type}`}>
-                <span aria-hidden="true">
-                  {status.type === 'success' ? '✓' : status.type === 'error' ? '!' : '…'}
-                </span>
-                {status.text}
-              </span>
-            )}
-          </div>
-        </form>
-
-        <footer className="card__footer">
-          <span className="preview-label">What your recipient will see</span>
-          <div className="bubble">
-            <p>{message.trim() || 'Your notification text'}</p>
-            <div className="keyboard" aria-hidden="true">
-              <span>Mark Done ✅</span>
+          <section className="preview" aria-label="Preview">
+            <span className="label">Preview</span>
+            <div className="bubble" dir="auto">{message.trim() || 'Your message appears here.'}</div>
+            <div className="actions" aria-hidden="true">
+              <span>Mark done ✅</span>
               <span>Snooze ⏰</span>
             </div>
-          </div>
-        </footer>
+          </section>
+        </form>
       </section>
     </main>
   );
