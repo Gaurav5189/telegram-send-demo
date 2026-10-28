@@ -9,6 +9,10 @@ backend/           NestJS API (port 3000)
 frontend/          React + Vite UI (port 5173)
 ```
 
+**YouTube Tutorial** https://youtu.be/R5vGObPU05E?si=XNchTDtV6eXUFLah
+
+---
+
 ## 1. Create a bot
 
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, and copy the token.
